@@ -5,21 +5,19 @@
 # http://shiny.rstudio.com
 #
 
-# load required packages
+# Load required packages
 library(shiny) # for interactivity
-library(dplyr) # for data munging
-library(tidyr) # for data munging
-library(ggplot2) # for plotting data
-library(reshape2) # for melting data
-library(scales) # for something I can't remember
-library(plyr) # for data munging
-library(pracma) # for error function
 library(readr) # for data import
-library(shinyapps) # for app deployment
+library(dplyr) # for data munging
+library(plyr) # for data munging
+library(tidyr) # for data munging
+library(reshape2) # for data munging
+library(ggplot2) # for plotting data
+library(pracma) # for the error function
+#library(shinyapps) # for app deployment
+library(fBasics) # for the heavyside function
 
-
-
-# open shiny server
+# Open shiny server
 
 shinyServer(function(input, output) {
         
@@ -34,7 +32,29 @@ shinyServer(function(input, output) {
                 if (is.null(inFile))
                         return(NULL)
                 
+                if(input$filetype == "ownfile") {
+                
                 upload <- read.table(inFile$datapath, header = TRUE) 
+                }
+                else if (input$filetype == "iontof") {
+                        peaks <- read.table(inFile$datapath, sep="\t", fill=TRUE, header=FALSE, nrows=1, skip=1) # imports masses (second row of df)
+                        
+                        upload <- read.table(inFile$datapath, 
+                                             sep="\t", fill=TRUE, 
+                                             header=FALSE, skip=3) %>%
+                                rename(peaks)
+                        peaks <- NULL # drop colnames
+                        upload[,ncol(upload)] <- NULL # drops last column which should be full of NAs
+                        
+                        colnames(upload) <- paste("X",colnames(upload), sep="")
+                        
+                        
+                        upload <- upload %>% rename(c("XNA" = "time"))
+
+                        
+                }
+                
+               return(upload)
         })
         
         # reactive to upload example data
@@ -45,19 +65,24 @@ shinyServer(function(input, output) {
         bl3 <- read.table("./examples/bl3.txt", header=TRUE)
         bl6 <- read.table("./examples/bl6.txt", header=TRUE)
         vamas <- read.table("./examples/vamas.txt", header=TRUE)
+        testdelta <- read.table("./examples/testdelta2.txt", header=TRUE, sep=",")
         switch(input$dataset,
-               "Example 1: 3% PS/PMMA bilayer" = bl3,
-               "Example 2: 6% PS/PMMA bilayer" = bl6,
+               "Example 1: 6% PS/PMMA bilayer" = bl6,
+               "Example 2: 3% PS/PMMA bilayer" = bl3,
                "Example 3: VAMAS multilayer" = vamas,
+               "Test delta layer" = testdelta,
               "User uploaded file" = Upload()
         )
          })
         
         
-        # reactive to meld selected data
+        # reactive to melt selected data into "long" format
         GetData <- reactive({
                 
                 pickdata <- pickData()
+              
+                
+                
                 sampledata <- pickdata %>%
                # sampledata <-  read.table("vamas_example.txt", header=TRUE) %>%
                         melt(id.vars = "time",
@@ -68,7 +93,6 @@ shinyServer(function(input, output) {
         
         # reactive to get max time
         # returns max time
-        # MAY NOT BE NEEDED ANY MORE
         MaxTime <- reactive({
                 sampledata <- GetData()
                 MaxTime <- max(sampledata$time)
@@ -116,15 +140,19 @@ shinyServer(function(input, output) {
           # Plot sample data
           plotpoints <- ggplot() + 
                   geom_point(data = peakdata,
-                             aes(time,log10(intensity)), colour = "blue") +
+                             aes(time,intensity), colour = "blue") +
                   geom_line(data = peakdata,
-                            aes(time,log10(intensity)), colour = "blue") +  
+                            aes(time,intensity), colour = "blue") +  
                   #    geom_point(data = subset(peakdata, peak == "X1175.8"),
                   #               aes(time,log(intensity)), colour = "green") +
                   #    geom_line(data = subset(peakdata, peak == "X1175.8"),
                   #              aes(time,log(intensity)), colour = "green") + 
-                  theme_classic() 
-          return(plotpoints)
+                  theme_classic() + xlim(min(input$zoomrange), max(input$zoomrange))
+          if(input$dispLog == TRUE){
+                  return(plotpoints+scale_y_log10() )
+          } else {
+          
+          return(plotpoints) }
   })
   
   
@@ -141,11 +169,22 @@ shinyServer(function(input, output) {
           brushedinterface <- brushedPoints(peakdata, input$plotpoints_brush, xvar="time", yvar="intensity")
           start <- min(brushedinterface$time) #min(input$range)
           end <- max(brushedinterface$time) #max(input$range)
+          
+          if (input$fitLog == TRUE){
           interface <- brushedinterface %>% 
                   #subset(peak == "X69") %>%
                   #subset(time<=end & time >= start) %>%
                   select(one_of(c("time", "intensity"))) %>%
-                  transmute(t = time, logIntensity=log10(intensity))
+                  transmute(t = time, intensity=log10(intensity))
+          }
+          else {
+                  interface <- brushedinterface %>% 
+                          #subset(peak == "X69") %>%
+                          #subset(time<=end & time >= start) %>%
+                          select(one_of(c("time", "intensity"))) %>%
+                          transmute(t = time, intensity=(intensity))   
+          }
+
           
           
           # Write the function
@@ -154,14 +193,22 @@ shinyServer(function(input, output) {
                   #erf(x)v
           }
           
+          delta.func <- function(t, A, B, sigma, i) {
+                  (A-B) * exp(-0.5*(t - i)^2/sigma^2) + B
+          }
+          
+#           heavyside.func <- function(t, A, B, i) {
+#                           (((sign(t-i) + 1)/2)*(B-A)+A)
+#           }
+          
           
           # Generate fitted data
           #t <- seq(start,end, by=0.01)
           #logIntensity <- error.func(seq(start, end, by=0.01), 13, 5, 45, 6)
           
           # Optimize fit
-
-          nls_fit <-nls(logIntensity ~ error.func(t, B, sigma, i, A), 
+if (input$interfacetype == "interface"){
+          nls_fit <-nls(intensity ~ error.func(t, B, sigma, i, A), 
                         data = interface, 
                         start = list(B = input$B, #10, # max intensity 
                                      A = input$A, #3# baseline intensity
@@ -170,8 +217,19 @@ shinyServer(function(input, output) {
                                      i = ((end-start)/2)+start # interface position
                         ), 
                         trace = F)
-
-          return(nls_fit)
+} else {
+        nls_fit <-nls(intensity ~ delta.func(t, B, sigma, i, A), 
+                      data = interface, 
+                      start = list(B = input$B, #10, # max intensity 
+                                   A = input$A, #3# baseline intensity
+                                   sigma = input$sigma, # sigma
+                                   #i = 120
+                                   i = ((end-start)/2)+start # interface position
+                      ), 
+                      trace = F)
+}
+          
+return(nls_fit)
           # need to add and if else statement depending on if this converged!
   })
   
@@ -184,25 +242,29 @@ shinyServer(function(input, output) {
           start <- min(brushedinterface$time) #min(input$range)
           end <- max(brushedinterface$time)
           # predict new data points from fit
-          t <- seq(start ,end, by=10/(end-start))
-          logIntensity <- as.numeric(predict(nls_fit, list(t = t)))
+          t <- seq(start , end, by=10/(end-start))
+          intensity <- as.numeric(predict(nls_fit, list(t = t)))
+          
+         if (input$fitLog == TRUE){
+                  intensity <- 10^(intensity) }
+          else {intensity <- intensity}
           
           # Make a data frame
-          fit <- cbind(t,logIntensity) %>% as.data.frame()
-          colnames(fit) <- c("t", "logIntensity")
+          fit <- cbind(t,intensity) %>% as.data.frame()
+          colnames(fit) <- c("t", "intensity")
           return(fit)
           
   })
   
-  # plots fitted data over points
+  # output plot of fitted data over points
   output$plotfit <- renderPlot({ 
           peakdata  <- subData()
           fit <- predictData()
           plotpoints <- ggplot() + 
                   geom_point(data = peakdata,
-                             aes(time,log10(intensity)), colour = "blue") +
+                             aes(time,intensity), colour = "blue") +
                   geom_line(data = peakdata,
-                            aes(time,log10(intensity)), colour = "blue") +  
+                            aes(time,intensity), colour = "blue") +  
                   #    geom_point(data = subset(peakdata, peak == "X1175.8"),
                   #               aes(time,log(intensity)), colour = "green") +
                   #    geom_line(data = subset(peakdata, peak == "X1175.8"),
@@ -210,9 +272,13 @@ shinyServer(function(input, output) {
                   theme_classic() 
           
           # Overlay fit on 
-          plotfit <- plotpoints + geom_line(data=fit, aes(t,logIntensity), colour="red", size=2) + theme_bw() #+ scale_x_continuous(breaks=seq(0, 500, by =  25))
+          plotfit <- plotpoints + geom_line(data=fit, aes(t,intensity), colour="red", size=2) + theme_classic() + xlim(min(input$zoomrange), max(input$zoomrange))#+ scale_x_continuous(breaks=seq(0, 500, by =  25))
           
-          return(plotfit)
+          if(input$dispLog == TRUE){
+                  return(plotfit+scale_y_log10() )
+          } else {
+                  
+                  return(plotfit) }
 
   })
 # summarizes NLS fit
@@ -263,6 +329,18 @@ output$nls_summary <- renderPrint({
           
   })
   
+# renders zoom range selector
+output$zoomrange <- renderUI({ 
+        #if (is.null(input$file1)) { return() }
+        sliderInput("zoomrange",
+                    "Zoom range",
+                    min = 0,
+                    max = MaxTime(),
+                    value = c(0,MaxTime()))
+        
+        
+})
+
   
 
 }) # closes shinyServer

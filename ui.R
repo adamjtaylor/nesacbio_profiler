@@ -14,19 +14,28 @@ library(scales)
 library(plyr)
 library(pracma)
 
-shinyUI(fluidPage(
+shinyUI(
+        navbarPage("NESAC/BIO depth profile analysis GUI",
+                   tabPanel("Find interfaces",
+        fluidPage(
+
+     
 
   # Application title
-  titlePanel("NESAC/BIO depth profile interface finder"),
-  helpText("Adam J. Taylor | ", 
-           a("tayloraj@uw.edu", href="mailto:tayloraj@uw.edu")
-           ),
+ # titlePanel("NESAC/BIO depth profile interface finder"),
+#  helpText("Adam J. Taylor | ", 
+ #          a("tayloraj@uw.edu", href="mailto:tayloraj@uw.edu")
+  #         ),
 
-  # Sidebar with a slider input for number of bins
+ 
   fluidRow(
     column(4, wellPanel(
             h4("Data input"),
-            helpText("Must be tab-seperated .txt files with \"time\" as first column. ", a("Example depth profile file.", href="https://www.dropbox.com/s/rbbwszjya1gq9hg/bl6.txt?raw=1")),
+            helpText("Either export as ASCII from Measurment Explorer Profiles program or use file must be tab-seperated .txt files with \"time\" as first column ", a("Example depth profile file.", href="https://www.dropbox.com/s/rbbwszjya1gq9hg/bl6.txt?raw=1")),
+            radioButtons("filetype", label = "File type",
+                         choices = list("Import from Ion-ToF" = "iontof", 
+                                        "Use own file" = "ownfile"
+                         ), selected = "iontof"),
             fileInput('file1', 'Upload a dataset',
                       accept = c(
                                           'text/csv',
@@ -39,13 +48,22 @@ shinyUI(fluidPage(
                       ),
             hr(),
             selectInput("dataset", "Choose a dataset:", 
-                        choices = c("Example 1: 3% PS/PMMA bilayer", 
-                                    "Example 2: 6% PS/PMMA bilayer", 
+                        choices = c("Example 1: 6% PS/PMMA bilayer", 
+                                    "Example 2: 3% PS/PMMA bilayer", 
                                     "Example 3: VAMAS multilayer",
+                                    "Test delta layer",
                                     "User uploaded file"
                         )),
            # uiOutput('rangeSelect'),
-            uiOutput('peakList')),
+            uiOutput('peakList'),
+           uiOutput('zoomrange'),
+           checkboxInput("dispLog", label="Display log10 transformed data", value = TRUE),
+           checkboxInput("fitLog", label="Fit using log10 transformed data", value = TRUE)
+           ),
+           radioButtons("interfacetype", "Search for:", 
+                       choices = list("Interface" = "interface", 
+                                   "Delta layer" = "deltalayer"
+                       ), selected = "interface"),
            wellPanel(
                    h4("Fit parameters"),
                    withMathJax(helpText(
@@ -63,6 +81,8 @@ shinyUI(fluidPage(
                         \\right]
                         - J_A$$")),
                    helpText('Adjust initial parameters if fit not found'),
+                   
+                  
             numericInput("A",
                          "Overlayer intensity, \\(J_A\\)",
                          10),
@@ -92,5 +112,20 @@ shinyUI(fluidPage(
             tableOutput("fitsummary")
     ))
     
-  )
-))
+  ) # closes fluid row
+
+  
+                        ) # closes fluid page
+                ), # closes tabPanel,
+  tabPanel("Transform z-axis to depth",
+    fluidPage(
+     fluidRow(
+        column(4, wellPanel(
+            h4("Coming soon!")
+              )
+             )
+          )
+      )
+    )# closes tabPanel
+  ) #closes navbarPage
+) # closes shiny UI
