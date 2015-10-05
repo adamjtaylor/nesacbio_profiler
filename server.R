@@ -216,16 +216,13 @@ fitData <- reactive({
   delta.func <- function(t, A, B, sigma, i) {
     (A-B) * exp(-0.5*(t - i)^2/sigma^2) + B
   }
-# # Write the heavyside function  - NOT COMPLETE          
-#           heavyside.func <- function(t, A, B, i) {
-#                           (((sign(t-i) + 1)/2)*(B-A)+A)
-#           }
+
+# # Write the heavyside function  - NOT IMPLEMENTED          
+# heavyside.func <- function(t, A, B, i) {
+#    (((sign(t-i) + 1)/2)*(B-A)+A)
+# }
           
-          
-  # Generate fitted data
-  #t <- seq(start,end, by=0.01)
-  #logIntensity <- error.func(seq(start, end, by=0.01), 13, 5, 45, 6)
-          
+  
   # Optimize the fit
   
   # If fitting an interface fit with the error function
@@ -255,114 +252,143 @@ fitData <- reactive({
 
 }) # close the reactive
   
-  # reactive to prodict fitted data across brushed interface region
-  # returns data frame of 100 predicted points
-  predictData <- reactive({
-          peakdata <- subData()
-          brushedinterface <- brushedPoints(peakdata, input$plotpoints_brush, xvar="time", yvar="intensity")
-          nls_fit <- fitData()
-          start <- min(brushedinterface$time) #min(input$range)
-          end <- max(brushedinterface$time)
-          # predict new data points from fit
-          t <- seq(start , end, by=10/(end-start))
-          intensity <- as.numeric(predict(nls_fit, list(t = t)))
-          
-         if (input$fitLog == TRUE){
-                  intensity <- 10^(intensity) }
-          else {intensity <- intensity}
-          
-          # Make a data frame
-          fit <- cbind(t,intensity) %>% as.data.frame()
-          colnames(fit) <- c("t", "intensity")
-          return(fit)
-          
-  })
-  
-  # output plot of fitted data over points
-  output$plotfit <- renderPlot({ 
-          peakdata  <- subData()
-          fit <- predictData()
-          plotpoints <- ggplot() + 
-                  geom_point(data = peakdata,
-                             aes(time,intensity), colour = "blue") +
-                  geom_line(data = peakdata,
-                            aes(time,intensity), colour = "blue") +  
-                  #    geom_point(data = subset(peakdata, peak == "X1175.8"),
-                  #               aes(time,log(intensity)), colour = "green") +
-                  #    geom_line(data = subset(peakdata, peak == "X1175.8"),
-                  #              aes(time,log(intensity)), colour = "green") + 
-                  theme_classic() 
-          
-          # Overlay fit on 
-          plotfit <- plotpoints + geom_line(data=fit, aes(t,intensity), colour="red", size=2) + theme_classic() + xlim(min(input$zoomrange), max(input$zoomrange))#+ scale_x_continuous(breaks=seq(0, 500, by =  25))
-          
-          if(input$dispLog == TRUE){
-                  return(plotfit+scale_y_log10() )
-          } else {
-                  
-                  return(plotfit) }
+# reactive to prodict fitted data across brushed interface region
+# returns data frame of 100 predicted points
+predictData <- reactive({
 
-  })
-# summarizes NLS fit
+  # Load the subsetr data
+  peakdata <- subData()
+
+  # Get the brushed interface and define the start and end points
+  brushedinterface <- brushedPoints(peakdata, 
+                                    input$plotpoints_brush, 
+                                    xvar="time", 
+                                    yvar="intensity")
+  
+  start <- min(brushedinterface$time)
+  end <- max(brushedinterface$time)
+  
+  # Load the optimized fit
+  nls_fit <- fitData()
+
+  # predict new data points from fit
+  t <- seq(start , end, by=10/(end-start))
+  intensity <- as.numeric(predict(nls_fit, list(t = t)))
+          
+  # Untransform data if fit was on log10 scaled data
+  if (input$fitLog == TRUE){
+    intensity <- 10^(intensity) }
+  else {intensity <- intensity}
+          
+  # Put predicted data into a data frame
+  fit <- cbind(t,intensity) %>% as.data.frame()
+  colnames(fit) <- c("t", "intensity")
+  
+  return(fit)
+          
+}) # close the reactive
+  
+# Output plot of fitted data over points
+output$plotfit <- renderPlot({ 
+
+  # Call requied data frame
+  peakdata  <- subData()
+  fit <- predictData()
+  
+  # Plot the raw data
+  plotpoints <- ggplot() +
+                geom_point(data = peakdata,
+                           aes(time,intensity), 
+                           colour = "blue") +
+                geom_line(data = peakdata,
+                          aes(time,intensity), 
+                          colour = "blue") +
+                theme_classic() 
+          
+  # Overlay fit on raw data
+  plotfit <- plotpoints + 
+             geom_line(data=fit, 
+                       aes(t,intensity), 
+                       colour="red", 
+                       size=2) + 
+             theme_classic() + 
+             xlim(min(input$zoomrange), 
+                  max(input$zoomrange))
+          
+  # Log10 scale the data if selected by user
+  if(input$dispLog == TRUE){
+    return(plotfit+scale_y_log10() )
+  }
+  
+  # Otherwise return the plot as is
+  else {
+    return(plotfit) 
+  }
+
+}) # Close the reactive
+
+# Prepare a summary of the fit
 output$nls_summary <- renderPrint({
         summary( fitData() )
-})
+}) # close the reactive
 
-# summarizes coefficients and interface positions
-  output$fitsummary <- renderTable({
-          peakdata <- subData()
-          brushedinterface <- brushedPoints(peakdata, input$plotpoints_brush, xvar="time", yvar="intensity")
-          nls_fit <- fitData()
-          start <- min(brushedinterface$time) #min(input$range)
-          end <- max(brushedinterface$time)
-          coef <- coef(nls_fit) %>% t() %>% as.data.frame() %>%
-                  mutate(fwhm = 2*sqrt(2*log(2))*sigma, #2.3548 * z,
-                         "16%-84%" = 2 * sigma ,
-                         fwtm = 2*sqrt(2*log(10))*sigma) %>%
-                  t()
-          coef <- cbind(Row.Names = rownames(coef), coef)
-          rownames(coef) <- NULL
-          colnames(coef) <- c("coef", "val")
-          coef <- as.data.frame(coef)
-          coef$val <- as.numeric(as.character(coef$val))
-          coef <- as.data.frame(coef)
-          coef <- mutate(coef, val = round(val, digits = 2))
-          coef$coef <- c("Underlayer intensity", "Overlayer intensity", "Sigma", 
-                         "Interface position", "FWHM", "16%-84%", "FWTM")
-          return(coef)
-  })
+# Summarize the coefficients and interface widths
+output$fitsummary <- renderTable({
+
+  # Load the data and interface start and finish
+  peakdata <- subData()
   
-#   output$rangeSelect <- renderUI({
-#           #if (is.null(input$file1)) { return() }
-#           
-#           sliderInput("range", "Search Range",
-#                       min = 0, max = 250, #MaxTime(),
-#                       value = c(50, 150), step = 0.5)
-#           
-#   })
+  brushedinterface <- brushedPoints(peakdata, 
+                                    input$plotpoints_brush, 
+                                    xvar="time", 
+                                    yvar="intensity")
+  nls_fit <- fitData()
+  start <- min(brushedinterface$time) #min(input$range)
+  end <- max(brushedinterface$time)
   
-# renders peak list slector
-  output$peakList <- renderUI({ 
-          #if (is.null(input$file1)) { return() }
-          selectInput("peak",
-                      "Select peak",
-                      peakList())
-          
-          
-  })
+  # Extract the coefficients and calculate FWHM and FWTM
+  coef <- coef(nls_fit) %>% t() %>% as.data.frame() %>%
+          mutate(fwhm = 2*sqrt(2*log(2))*sigma,
+                 "16%-84%" = 2 * sigma,
+                 fwtm = 2*sqrt(2*log(10))*sigma) %>%
+          t()
+  
+  # Arrange data frame and round didgits
+  coef <- cbind(Row.Names = rownames(coef), coef)
+  rownames(coef) <- NULL
+  colnames(coef) <- c("coef", "val")
+  coef <- as.data.frame(coef)
+  coef$val <- as.numeric(as.character(coef$val))
+  coef <- as.data.frame(coef)
+  coef <- mutate(coef, val = round(val, digits = 2))
+  coef$coef <- c("Underlayer intensity", 
+                 "Overlayer intensity", 
+                 "Sigma",
+                 "Interface position", 
+                 "FWHM", 
+                 "16%-84%", 
+                 "FWTM")
+  
+  return(coef)
+}) # close the reactive
+  
+ 
+# Render the peak selector
+output$peakList <- renderUI({ 
+  selectInput("peak",
+              "Select peak",
+              peakList()
+              )
+}) # close the reactive
   
 # renders zoom range selector
 output$zoomrange <- renderUI({ 
-        #if (is.null(input$file1)) { return() }
-        sliderInput("zoomrange",
-                    "Zoom range",
-                    min = 0,
-                    max = MaxTime(),
-                    value = c(0,MaxTime()))
-        
-        
-})
-
-  
+  sliderInput("zoomrange",
+              "Zoom range",
+              min = 0,
+              max = MaxTime(),
+              value = c(0,MaxTime())
+              )
+}) # close the reactive
 
 }) # closes shinyServer
