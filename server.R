@@ -14,7 +14,7 @@ library(tidyr) # for data munging
 library(reshape2) # for data munging
 library(ggplot2) # for plotting data
 library(pracma) # for the error function
-#library(shinyapps) # for app deployment
+library(shinyapps) # for app deployment
 library(fBasics) # for the heavyside function
 
 # Open shiny server

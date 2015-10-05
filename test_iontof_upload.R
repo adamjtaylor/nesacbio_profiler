@@ -8,11 +8,10 @@ library(reshape2) # for data munging
 library(ggplot2) # for plotting data
 library(pracma) # for the error function
 #library(shinyapps) # for app deployment
-library(fBasics) # for the heavyside function
 
-peaks <- read.table("6layer.txt", sep="\t", fill=TRUE, header=FALSE, nrows=1, skip=1) # imports masses (second row of df)
+peaks <- read.table("6layer.TXT", sep="\t", fill=TRUE, header=FALSE, nrows=1, skip=1) # imports masses (second row of df)
 
-upload <- read.table("6layer.txt", sep="\t", 
+upload <- read.table("6layer.TXT", sep="\t", 
                        fill=TRUE, header=FALSE, 
                        skip=3) %>% rename(peaks)
 
